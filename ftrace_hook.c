@@ -339,7 +339,78 @@ static asmlinkage long fh_sys_execve(const char __user *filename,
 	return ret;
 }
 
+static int (*real_xfs_vn_mkdir)(struct inode	*dir, struct dentry	*dentry, umode_t		mode);
+static int fh_xfs_vn_mkdir(struct inode	*dir, struct dentry	*dentry, umode_t		mode)
+{
+	int ret;
+
+	pr_info("xfs_vn_mkdir() before\n");
+
+	ret = real_xfs_vn_mkdir(dir, dentry, mode);
+
+	pr_info("xfs_vn_mkdir() after: %d\n", ret);
+
+	return ret;
+}
+
+#if 0
+void *(*real_kmem_cache_alloc)(struct kmem_cache *s, gfp_t gfpflags);
+void *fh_kmem_cache_alloc(struct kmem_cache *s, gfp_t gfpflags)
+{
+	void *ret;
+
+	if (s->size == 1024)
+		pr_info("kmem_cache_alloc 1024\n");
+
+	ret = real_kmem_cache_alloc(s, gfpflags);
+
+	return ret;
+}
+#endif
+
+//static void *__slab_alloc(struct kmem_cache *s, gfp_t gfpflags, int node, unsigned long addr, struct kmem_cache_cpu *c)
+static void *(*real_slab_alloc)(struct kmem_cache *s, gfp_t gfpflags, int node, unsigned long addr, struct kmem_cache_cpu *c);
+static void *fh_slab_alloc(struct kmem_cache *s, gfp_t gfpflags, int node, unsigned long addr, struct kmem_cache_cpu *c)
+{
+	void *ret;
+
+	ret = real_slab_alloc(s, gfpflags, node, addr, c);
+
+	if (!strncmp(s->name, "kmalloc-1024", 13))
+		pr_info("slab_alloc 1024: ptr %p, caller %lx, comm: %.20s\n",
+			ret, addr, current->comm);
+
+	return ret;
+}
+
+//static void __slab_free(struct kmem_cache *s, struct page *page, void *head, void *tail, int cnt, unsigned long addr)
+static void (*real_slab_free)(struct kmem_cache *s, struct page *page, void *head, void *tail, int cnt, unsigned long addr);
+static void fh_slab_free(struct kmem_cache *s, struct page *page, void *head, void *tail, int cnt, unsigned long addr)
+{
+	if (!strncmp(s->name, "kmalloc-1024", 13))
+		pr_info("slab_free 1024: head %p, tail %p, cnt %d,  caller %lx, comm: %.20s, size: %d, name: %s\n",
+			head, tail, cnt, addr, current->comm, s->size, s->name);
+
+	real_slab_free(s, page, head, tail, cnt, addr);
+}
+
+//void *kmem_cache_alloc(struct kmem_cache *s, gfp_t gfpflags)
+void *(*real_kmem_cache_alloc)(struct kmem_cache *s, gfp_t gfpflags);
+void *fh_kmem_cache_alloc(struct kmem_cache *s, gfp_t gfpflags)
+{
+	void *ret;
+	unsigned long addr = _RET_IP_;
+
+	ret = real_kmem_cache_alloc(s, gfpflags);
+	if (!strncmp(s->name, "kmalloc-1024", 13))
+		pr_info("kmem_cache_alloc 1024: ptr %p, caller %lx, comm: %.20s, size: %d\n",
+			ret, addr, current->comm, s->size);
+
+	return ret;
+}
+
 static struct fh_hook demo_hooks[] = {
+#if 0
 	{
 		.name = "sys_clone",
 		.func = fh_sys_clone,
@@ -349,6 +420,34 @@ static struct fh_hook demo_hooks[] = {
 		.name = "sys_execve",
 		.func = fh_sys_execve,
 		.orig = &real_sys_execve,
+	},
+	{
+		.name = "xfs_vn_mkdir",
+		.func = fh_xfs_vn_mkdir,
+		.orig = &real_xfs_vn_mkdir,
+	},
+	{
+		.name = "kmem_cache_alloc",
+		.func = fh_kmem_cache_alloc,
+		.orig = &real_kmem_cache_alloc,
+	},
+#endif
+	{
+		.name = "__slab_alloc",
+		.func = fh_slab_alloc,
+		.orig = &real_slab_alloc,
+	},
+#if 0
+	{
+		.name = "kmem_cache_alloc",
+		.func = fh_kmem_cache_alloc,
+		.orig = &real_kmem_cache_alloc,
+	},
+#endif
+	{
+		.name = "__slab_free",
+		.func = fh_slab_free,
+		.orig = &real_slab_free,
 	},
 };
 
